@@ -61,13 +61,20 @@ pub fn dispatch(
     argv: []const []const u8,
     env: *std.process.EnvMap,
 ) !u8 {
-    const parsed = args_mod.parseGlobals(argv) catch |err| {
+    var parsed = args_mod.parseGlobals(argv) catch |err| {
         switch (err) {
             error.UnknownGlobalFlag => io.err("outlook: unknown global flag\n"),
             error.MissingGlobalValue => io.err("outlook: global flag missing value\n"),
         }
         return 2;
     };
+
+    // Allow the global boolean flags (--json, --no-color, --verbose) after
+    // the command name too, e.g. `outlook accounts --json`. Anything else in
+    // the post-command tail belongs to the command's own parser.
+    const cleaned_rest = try args_mod.stripPostCommandGlobals(gpa, parsed.rest, &parsed.globals);
+    defer gpa.free(cleaned_rest);
+    parsed.rest = cleaned_rest;
 
     if (parsed.globals.verbose) log.setVerbose(true);
 
@@ -214,7 +221,7 @@ fn exitCodeFor(err: anyerror) u8 {
     return switch (err) {
         error.UserAborted => 130,
         error.InvalidArgument => 2,
-        error.MissingClientId, error.NotSignedIn, error.NoCurrentAccount => 3,
+        error.MissingClientId, error.NotSignedIn, error.NoCurrentAccount, error.AccountNotFound => 3,
         error.Unauthorized, error.TokenExpiredNoRefresh => 4,
         error.RateLimited => 5,
         error.NetworkUnreachable, error.TlsHandshakeFailed => 6,

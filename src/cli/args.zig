@@ -24,6 +24,36 @@ pub const Parsed = struct {
     rest: []const []const u8, // everything after the command
 };
 
+/// Strip global boolean flags (`--json`, `--no-color`, `--verbose`) from a
+/// post-command argv slice and apply them to the in-progress globals struct.
+/// Returns a new slice with those flags removed so the per-command parser
+/// only sees its own flags. The slice borrows from `gpa` and the caller
+/// frees it.
+pub fn stripPostCommandGlobals(
+    gpa: std.mem.Allocator,
+    argv: []const []const u8,
+    g: *ParsedGlobals,
+) ![]const []const u8 {
+    var out: std.ArrayList([]const u8) = .empty;
+    errdefer out.deinit(gpa);
+    for (argv) |a| {
+        if (std.mem.eql(u8, a, "--json") or std.mem.eql(u8, a, "-j")) {
+            g.json = true;
+            continue;
+        }
+        if (std.mem.eql(u8, a, "--no-color")) {
+            g.no_color = true;
+            continue;
+        }
+        if (std.mem.eql(u8, a, "--verbose") or std.mem.eql(u8, a, "-v")) {
+            g.verbose = true;
+            continue;
+        }
+        try out.append(gpa, a);
+    }
+    return out.toOwnedSlice(gpa);
+}
+
 pub const ParseError = error{
     UnknownGlobalFlag,
     MissingGlobalValue,
