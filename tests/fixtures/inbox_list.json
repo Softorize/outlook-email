@@ -1,0 +1,36 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('me')/mailFolders('inbox')/messages",
+  "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$skip=25",
+  "value": [
+    {
+      "id": "AAMkAD0a",
+      "subject": "Weekly status",
+      "bodyPreview": "Quick update on the migration and the staging deploys.",
+      "importance": "normal",
+      "isRead": false,
+      "hasAttachments": true,
+      "receivedDateTime": "2026-04-08T09:12:00Z",
+      "from": {
+        "emailAddress": {
+          "address": "bob@contoso.com",
+          "name": "Bob Jones"
+        }
+      },
+      "extraFieldAddedByMicrosoft": 42
+    },
+    {
+      "id": "AAMkAD0b",
+      "subject": null,
+      "bodyPreview": "",
+      "isRead": true,
+      "hasAttachments": false,
+      "receivedDateTime": "2026-04-07T15:00:00Z",
+      "from": null,
+      "sender": {
+        "emailAddress": {
+          "address": "newsletters@example.com"
+        }
+      }
+    }
+  ]
+}

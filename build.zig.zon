@@ -1,0 +1,14 @@
+.{
+    .name = .outlook_email,
+    .version = "0.1.0",
+    .fingerprint = 0xc0f6afb44259487c,
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "tests",
+        "README.md",
+    },
+}

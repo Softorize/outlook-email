@@ -1,0 +1,33 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('me')/messages('AAMkAD0a')",
+  "id": "AAMkAD0a",
+  "conversationId": "convo-1",
+  "subject": "Weekly status",
+  "receivedDateTime": "2026-04-08T09:12:00Z",
+  "sentDateTime": "2026-04-08T09:10:00Z",
+  "webLink": "https://outlook.office365.com/owa/?ItemID=AAMkAD0a",
+  "importance": "normal",
+  "isRead": false,
+  "hasAttachments": true,
+  "body": {
+    "contentType": "text",
+    "content": "Line one.\nLine two.\n"
+  },
+  "from": {
+    "emailAddress": { "address": "bob@contoso.com", "name": "Bob Jones" }
+  },
+  "toRecipients": [
+    { "emailAddress": { "address": "alice@contoso.com", "name": "Alice" } }
+  ],
+  "ccRecipients": [],
+  "bccRecipients": [],
+  "attachments": [
+    {
+      "id": "att1",
+      "name": "report.pdf",
+      "contentType": "application/pdf",
+      "size": 12345,
+      "isInline": false
+    }
+  ]
+}
