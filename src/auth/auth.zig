@@ -157,7 +157,10 @@ pub const Session = struct {
             .content_type = "application/x-www-form-urlencoded",
         });
         defer dc_resp.deinit();
-        if (dc_resp.status != 200) return error.DeviceFlowPollFailed;
+        if (dc_resp.status != 200) {
+            reportAadError(self.gpa, dc_resp.status, dc_resp.body);
+            return error.DeviceFlowPollFailed;
+        }
 
         var start = try device_flow.startFromJson(self.gpa, dc_resp.body);
         defer start.deinit();
@@ -259,6 +262,30 @@ pub const Session = struct {
         self.account = try self.gpa.dupe(u8, account);
     }
 };
+
+/// Pull the AAD error code + description out of an Azure error response and
+/// print them to stderr so the user sees the real cause (e.g.
+/// `AADSTS700016: Application with identifier ... was not found`) instead of
+/// a generic "sign-in poll failed" message.
+fn reportAadError(gpa: std.mem.Allocator, status: u16, body: []const u8) void {
+    const Aad = struct {
+        @"error": []const u8 = "",
+        error_description: []const u8 = "",
+    };
+    var p = std.json.parseFromSlice(Aad, gpa, body, .{ .ignore_unknown_fields = true }) catch {
+        @import("../util/io.zig").errPrint("ocli: Microsoft returned HTTP {d}: {s}\n", .{ status, body });
+        return;
+    };
+    defer p.deinit();
+    if (p.value.@"error".len == 0 and p.value.error_description.len == 0) {
+        @import("../util/io.zig").errPrint("ocli: Microsoft returned HTTP {d}\n", .{status});
+        return;
+    }
+    @import("../util/io.zig").errPrint(
+        "ocli: Microsoft rejected the sign-in request:\n  {s}\n  {s}\n",
+        .{ p.value.@"error", p.value.error_description },
+    );
+}
 
 pub fn freeAccount(gpa: std.mem.Allocator, a: token_mod.Account) void {
     gpa.free(a.upn);

@@ -89,7 +89,7 @@ pub fn defaultMessage(err: Error) []const u8 {
         error.TokenExpiredNoRefresh => "Your saved sign-in has expired and could not be refreshed. Run 'ocli login'.",
         error.DeviceFlowDenied => "You denied the sign-in request.",
         error.DeviceFlowExpired => "The device code expired before sign-in completed. Run 'ocli login' again.",
-        error.DeviceFlowPollFailed => "The sign-in poll failed. Check your network and retry 'ocli login'.",
+        error.DeviceFlowPollFailed => "Sign-in failed. See the message above for the cause, then retry 'ocli login'.",
         error.NotSignedIn => "Not signed in. Run 'ocli login' first.",
         error.KeystoreUnavailable => "No credential store is available on this machine. The encrypted file fallback is in use; see README.",
         error.KeystoreItemMissing => "The requested credential was not found in the keystore.",

@@ -121,11 +121,13 @@ pub fn do(client: *Client, gpa: std.mem.Allocator, req: Request) !Response {
 }
 
 fn doOnce(client: *Client, gpa: std.mem.Allocator, req: Request) !Response {
+    // Set User-Agent and Content-Type via the std.http.Client.Request.Headers
+    // override mechanism, NOT via extra_headers. Pushing them into
+    // extra_headers would duplicate them alongside Zig's defaults, and
+    // Microsoft's IIS gateway rejects requests with duplicate User-Agent.
     var extra: std.ArrayList(Header) = .empty;
     defer extra.deinit(gpa);
     try extra.append(gpa, .{ .name = "Accept", .value = "application/json" });
-    try extra.append(gpa, .{ .name = "User-Agent", .value = client.user_agent });
-    if (req.content_type) |ct| try extra.append(gpa, .{ .name = "Content-Type", .value = ct });
 
     var bearer_owned: ?[]const u8 = null;
     defer if (bearer_owned) |b| gpa.free(b);
@@ -144,11 +146,17 @@ fn doOnce(client: *Client, gpa: std.mem.Allocator, req: Request) !Response {
 
     log.debug("ocli: HTTP {s} {s}", .{ @tagName(req.method), req.url });
 
+    var std_headers: std.http.Client.Request.Headers = .{
+        .user_agent = .{ .override = client.user_agent },
+    };
+    if (req.content_type) |ct| std_headers.content_type = .{ .override = ct };
+
     const fetch_result = client.inner.fetch(.{
         .location = .{ .url = req.url },
         .method = req.method,
         .payload = req.body,
         .response_writer = &alloc_writer.writer,
+        .headers = std_headers,
         .extra_headers = extra.items,
     }) catch |err| return mapFetchError(err);
 
