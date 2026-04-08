@@ -68,10 +68,10 @@ fn listFolderImpl(
     var query: std.ArrayList(u8) = .empty;
     defer query.deinit(ctx.gpa);
     try query.writer(ctx.gpa).print(
-        "$top={d}&$select=id,subject,from,sender,receivedDateTime,isRead,hasAttachments,bodyPreview,importance&$orderby=receivedDateTime desc",
+        "$top={d}&$select=id,subject,from,sender,receivedDateTime,isRead,hasAttachments,bodyPreview,importance&$orderby=receivedDateTime%20desc",
         .{opts.top},
     );
-    if (opts.unread_only) try query.appendSlice(ctx.gpa, "&$filter=isRead eq false");
+    if (opts.unread_only) try query.appendSlice(ctx.gpa, "&$filter=isRead%20eq%20false");
 
     const url = try std.fmt.allocPrint(
         ctx.gpa,
@@ -91,6 +91,7 @@ fn fetchMessageList(ctx: *Ctx, gpa: std.mem.Allocator, url: []const u8) !Page(ty
     });
     defer resp.deinit();
     if (resp.status != 200) {
+        reportGraphError(resp.status, resp.body);
         var diag = errors.Diagnostic.simple(error.HttpStatus);
         return http.classifyStatus(resp.status, &diag);
     }
@@ -100,7 +101,7 @@ fn fetchMessageList(ctx: *Ctx, gpa: std.mem.Allocator, url: []const u8) !Page(ty
     const a = arena.allocator();
 
     const Env = types.ListEnvelope(types.RawMessageSummary);
-    const parsed = std.json.parseFromSliceLeaky(Env, a, resp.body, .{ .ignore_unknown_fields = true }) catch return error.GraphMalformedJson;
+    const parsed = std.json.parseFromSliceLeaky(Env, a, resp.body, .{ .ignore_unknown_fields = true, .allocate = .alloc_always }) catch return error.GraphMalformedJson;
 
     const items = try a.alloc(types.MessageSummary, parsed.value.len);
     for (parsed.value, 0..) |raw, i| {
@@ -139,6 +140,7 @@ pub fn getMessage(ctx: *Ctx, gpa: std.mem.Allocator, id: []const u8) !Loaded(typ
     });
     defer resp.deinit();
     if (resp.status != 200) {
+        reportGraphError(resp.status, resp.body);
         var diag = errors.Diagnostic.simple(error.HttpStatus);
         return http.classifyStatus(resp.status, &diag);
     }
@@ -147,7 +149,7 @@ pub fn getMessage(ctx: *Ctx, gpa: std.mem.Allocator, id: []const u8) !Loaded(typ
     errdefer arena.deinit();
     const a = arena.allocator();
 
-    const raw = std.json.parseFromSliceLeaky(types.RawMessageFull, a, resp.body, .{ .ignore_unknown_fields = true }) catch return error.GraphMalformedJson;
+    const raw = std.json.parseFromSliceLeaky(types.RawMessageFull, a, resp.body, .{ .ignore_unknown_fields = true, .allocate = .alloc_always }) catch return error.GraphMalformedJson;
 
     const to_slice = try a.alloc(types.Recipient, raw.toRecipients.len);
     types.convertRecipients(raw.toRecipients, to_slice);
@@ -207,6 +209,7 @@ pub fn deleteMessage(ctx: *Ctx, id: []const u8) !void {
     });
     defer resp.deinit();
     if (resp.status != 204 and resp.status != 200) {
+        reportGraphError(resp.status, resp.body);
         var diag = errors.Diagnostic.simple(error.HttpStatus);
         return http.classifyStatus(resp.status, &diag);
     }
@@ -227,6 +230,7 @@ pub fn moveMessage(ctx: *Ctx, id: []const u8, destination_folder_id: []const u8)
     });
     defer resp.deinit();
     if (resp.status != 201 and resp.status != 200) {
+        reportGraphError(resp.status, resp.body);
         var diag = errors.Diagnostic.simple(error.HttpStatus);
         return http.classifyStatus(resp.status, &diag);
     }
@@ -258,9 +262,11 @@ pub fn replyMessage(
         .body = body_buf.items,
         .content_type = "application/json",
         .bearer = ctx.session.bearerProvider(),
+        .expects_response_body = false,
     });
     defer resp.deinit();
     if (resp.status != 202) {
+        reportGraphError(resp.status, resp.body);
         var diag = errors.Diagnostic.simple(error.HttpStatus);
         return http.classifyStatus(resp.status, &diag);
     }
@@ -289,9 +295,11 @@ pub fn forwardMessage(
         .body = buf.items,
         .content_type = "application/json",
         .bearer = ctx.session.bearerProvider(),
+        .expects_response_body = false,
     });
     defer resp.deinit();
     if (resp.status != 202) {
+        reportGraphError(resp.status, resp.body);
         var diag = errors.Diagnostic.simple(error.HttpStatus);
         return http.classifyStatus(resp.status, &diag);
     }
@@ -333,6 +341,7 @@ pub fn listFolders(ctx: *Ctx, gpa: std.mem.Allocator) !Page(types.Folder) {
     });
     defer resp.deinit();
     if (resp.status != 200) {
+        reportGraphError(resp.status, resp.body);
         var diag = errors.Diagnostic.simple(error.HttpStatus);
         return http.classifyStatus(resp.status, &diag);
     }
@@ -342,7 +351,7 @@ pub fn listFolders(ctx: *Ctx, gpa: std.mem.Allocator) !Page(types.Folder) {
     const a = arena.allocator();
 
     const Env = types.ListEnvelope(types.RawFolder);
-    const parsed = std.json.parseFromSliceLeaky(Env, a, resp.body, .{ .ignore_unknown_fields = true }) catch return error.GraphMalformedJson;
+    const parsed = std.json.parseFromSliceLeaky(Env, a, resp.body, .{ .ignore_unknown_fields = true, .allocate = .alloc_always }) catch return error.GraphMalformedJson;
 
     const items = try a.alloc(types.Folder, parsed.value.len);
     for (parsed.value, 0..) |raw, i| items[i] = .{
@@ -379,4 +388,8 @@ pub fn writeJsonEscaped(out: *std.ArrayList(u8), gpa: std.mem.Allocator, s: []co
         },
         else => try out.append(gpa, ch),
     };
+}
+
+fn reportGraphError(status: u16, body: []const u8) void {
+    @import("../util/io.zig").errPrint("ocli: Graph returned HTTP {d}: {s}\n", .{ status, body });
 }

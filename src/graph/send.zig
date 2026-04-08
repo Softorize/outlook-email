@@ -38,6 +38,7 @@ fn sendInline(ctx: *graph.Ctx, draft: types.Draft) !void {
         .body = buf.items,
         .content_type = "application/json",
         .bearer = ctx.session.bearerProvider(),
+        .expects_response_body = false,
     });
     defer resp.deinit();
     if (resp.status != 202) {

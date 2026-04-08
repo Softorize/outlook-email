@@ -218,6 +218,7 @@ pub fn sendDraft(ctx: *graph.Ctx, draft_id: []const u8) !void {
         .method = .POST,
         .url = url,
         .bearer = ctx.session.bearerProvider(),
+        .expects_response_body = false,
     });
     defer resp.deinit();
     if (resp.status != 202 and resp.status != 200) {

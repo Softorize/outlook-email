@@ -32,16 +32,29 @@ pub const Session = struct {
         ks: keystore.Backend,
         http_client: *http.Client,
     ) Session {
+        const initial: ?[]const u8 = if (cfg.current_account) |a|
+            (gpa.dupe(u8, a) catch null)
+        else
+            null;
         return .{
             .gpa = gpa,
             .cfg = cfg,
             .ks = ks,
             .http_client = http_client,
-            .account = if (cfg.current_account) |a| a else null,
+            .account = initial,
         };
     }
 
-    pub fn deinit(_: *Session) void {}
+    pub fn deinit(self: *Session) void {
+        if (self.account) |a| self.gpa.free(a);
+        self.account = null;
+    }
+
+    fn setAccount(self: *Session, new_account: []const u8) !void {
+        const dup = try self.gpa.dupe(u8, new_account);
+        if (self.account) |old| self.gpa.free(old);
+        self.account = dup;
+    }
 
     pub fn bearerProvider(self: *Session) http.BearerProvider {
         return .{ .ctx = self, .getFn = bearerGetFn };
@@ -209,7 +222,12 @@ pub const Session = struct {
                         var mut = s.*;
                         mut.deinit();
                     }
-                    const acct = try token_mod.peekAccessTokenClaims(self.gpa, s.access_token);
+                    // Look up the user identity via GET /me. Doing this with a
+                    // real Graph call is more robust than parsing the access
+                    // token as a JWT -- access tokens are opaque for MSA /
+                    // personal accounts and the JWT shape varies between
+                    // tenants.
+                    const acct = try fetchMeAccount(self, s.access_token);
                     errdefer freeAccount(self.gpa, acct);
 
                     const expires_at = std.time.timestamp() + @as(i64, s.expires_in);
@@ -230,7 +248,7 @@ pub const Session = struct {
                         .secret = meta_json,
                     });
 
-                    self.account = try self.gpa.dupe(u8, acct.upn);
+                    try self.setAccount(acct.upn);
                     return acct;
                 },
             }
@@ -247,7 +265,10 @@ pub const Session = struct {
             else => return err,
         };
         if (self.account) |cur| {
-            if (std.mem.eql(u8, cur, account)) self.account = null;
+            if (std.mem.eql(u8, cur, account)) {
+                self.gpa.free(cur);
+                self.account = null;
+            }
         }
     }
 
@@ -256,12 +277,61 @@ pub const Session = struct {
     }
 
     pub fn setCurrent(self: *Session, account: []const u8) !void {
-        // Verify the account has a saved refresh token.
         const rt = (try self.ks.get(self.gpa, account, "refresh_token")) orelse return error.AccountNotFound;
         self.gpa.free(rt);
-        self.account = try self.gpa.dupe(u8, account);
+        try self.setAccount(account);
     }
 };
+
+/// Fetch the signed-in user's profile via Graph /me using the freshly
+/// issued access token directly (bypassing the BearerProvider, since the
+/// session doesn't yet know which account is current).
+fn fetchMeAccount(self: *Session, access_token: []const u8) !token_mod.Account {
+    var bearer_buf: [4500]u8 = undefined;
+    const bearer_val = std.fmt.bufPrint(&bearer_buf, "Bearer {s}", .{access_token}) catch return error.OutOfMemory;
+    const headers = [_]http.Header{
+        .{ .name = "Authorization", .value = bearer_val },
+    };
+
+    var resp = try http.do(self.http_client, self.gpa, .{
+        .method = .GET,
+        .url = "https://graph.microsoft.com/v1.0/me",
+        .extra_headers = &headers,
+    });
+    defer resp.deinit();
+
+    if (resp.status != 200) {
+        @import("../util/io.zig").errPrint(
+            "ocli: GET /me returned HTTP {d}: {s}\n",
+            .{ resp.status, resp.body },
+        );
+        return error.GraphMalformedJson;
+    }
+
+    const Me = struct {
+        userPrincipalName: ?[]const u8 = null,
+        mail: ?[]const u8 = null,
+        displayName: ?[]const u8 = null,
+        id: ?[]const u8 = null,
+    };
+    var p = std.json.parseFromSlice(Me, self.gpa, resp.body, .{ .ignore_unknown_fields = true }) catch {
+        @import("../util/io.zig").errPrint(
+            "ocli: could not parse /me response: {s}\n",
+            .{resp.body},
+        );
+        return error.GraphMalformedJson;
+    };
+    defer p.deinit();
+
+    const upn = p.value.userPrincipalName orelse p.value.mail orelse p.value.id orelse "unknown";
+    const display = p.value.displayName orelse upn;
+    return .{
+        .upn = try self.gpa.dupe(u8, upn),
+        .display_name = try self.gpa.dupe(u8, display),
+        .home_tenant_id = try self.gpa.dupe(u8, ""),
+        .object_id = try self.gpa.dupe(u8, p.value.id orelse ""),
+    };
+}
 
 /// Pull the AAD error code + description out of an Azure error response and
 /// print them to stderr so the user sees the real cause (e.g.

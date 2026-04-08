@@ -79,6 +79,12 @@ pub const Request = struct {
     /// Upper limit on the response body. Prevents runaway servers from
     /// exhausting memory. Default 16 MB is plenty for Graph list responses.
     max_response_bytes: usize = 16 * 1024 * 1024,
+    /// Set to false for endpoints that return 202 / 204 with no body
+    /// (DELETE, sendMail, reply, forward, send-draft). When false the HTTP
+    /// layer skips passing a response_writer to std.http.Client.fetch,
+    /// which avoids a streamRemaining hang waiting for body bytes that
+    /// never arrive.
+    expects_response_body: bool = true,
 };
 
 pub const Response = struct {
@@ -121,6 +127,15 @@ pub fn do(client: *Client, gpa: std.mem.Allocator, req: Request) !Response {
 }
 
 fn doOnce(client: *Client, gpa: std.mem.Allocator, req: Request) !Response {
+    // Endpoints that return 202/204 with no body need a different code path:
+    // std.http.Client.fetch always tries to drain the response body (either
+    // via response_writer.streamRemaining or via discardRemaining), and both
+    // hang on a 0-length body served over a keep-alive connection because
+    // there is no terminator to detect end-of-message.
+    if (!req.expects_response_body or req.method == .DELETE) {
+        return doNoResponseBody(client, gpa, req);
+    }
+
     // Set User-Agent and Content-Type via the std.http.Client.Request.Headers
     // override mechanism, NOT via extra_headers. Pushing them into
     // extra_headers would duplicate them alongside Zig's defaults, and
@@ -151,11 +166,18 @@ fn doOnce(client: *Client, gpa: std.mem.Allocator, req: Request) !Response {
     };
     if (req.content_type) |ct| std_headers.content_type = .{ .override = ct };
 
+    // For endpoints that return no body (DELETE, sendMail, etc.), do NOT
+    // pass a response_writer. std.http.Client.fetch's response_writer path
+    // calls streamRemaining which blocks waiting for body bytes that never
+    // arrive. The null-writer path uses discardRemaining which handles
+    // empty bodies correctly.
+    const expects_body = req.expects_response_body and req.method != .DELETE;
+
     const fetch_result = client.inner.fetch(.{
         .location = .{ .url = req.url },
         .method = req.method,
         .payload = req.body,
-        .response_writer = &alloc_writer.writer,
+        .response_writer = if (expects_body) &alloc_writer.writer else null,
         .headers = std_headers,
         .extra_headers = extra.items,
     }) catch |err| return mapFetchError(err);
@@ -165,16 +187,76 @@ fn doOnce(client: *Client, gpa: std.mem.Allocator, req: Request) !Response {
         return error.GraphMalformedJson; // treat oversized as malformed
     }
 
-    // Capture the body into an owned slice. Allocating owns its buffer; we
-    // hand it off to the Response so the caller can free it via deinit.
-    var list = alloc_writer.toArrayList();
-    const body_slice = list.toOwnedSlice(gpa) catch return error.OutOfMemory;
+    // Always dupe via gpa rather than moving ownership from Allocating.
+    // toOwnedSlice on an Allocating that never wrote anything panics trying
+    // to realloc a null buffer.
+    const written = alloc_writer.written();
+    const body_slice = gpa.dupe(u8, written) catch return error.OutOfMemory;
 
     return .{
         .gpa = gpa,
         .status = status,
         .body = body_slice,
         .request_id = null, // header capture not implemented in 0.15.2 fetch
+        .retry_after_seconds = null,
+    };
+}
+
+/// Issue a request that we expect to return no body (DELETE, sendMail,
+/// reply, forward, send-draft). Uses the lower-level std.http.Client
+/// `request` API so we can grab the status from receiveHead and exit
+/// without ever reading body bytes -- avoiding the streamRemaining /
+/// discardRemaining hangs that fetch hits on 0-length keep-alive responses.
+fn doNoResponseBody(client: *Client, gpa: std.mem.Allocator, req: Request) !Response {
+    var extra: std.ArrayList(Header) = .empty;
+    defer extra.deinit(gpa);
+    try extra.append(gpa, .{ .name = "Accept", .value = "application/json" });
+
+    var bearer_owned: ?[]const u8 = null;
+    defer if (bearer_owned) |b| gpa.free(b);
+    var auth_header_storage: [4096]u8 = undefined;
+    if (req.bearer) |bp| {
+        const tok = try bp.get(gpa);
+        bearer_owned = tok;
+        const val = std.fmt.bufPrint(&auth_header_storage, "Bearer {s}", .{tok}) catch return error.GraphBadRequest;
+        try extra.append(gpa, .{ .name = "Authorization", .value = val });
+    }
+    for (req.extra_headers) |h| try extra.append(gpa, h);
+
+    var std_headers: std.http.Client.Request.Headers = .{
+        .user_agent = .{ .override = client.user_agent },
+    };
+    if (req.content_type) |ct| std_headers.content_type = .{ .override = ct };
+
+    log.debug("ocli: HTTP {s} {s}", .{ @tagName(req.method), req.url });
+
+    const uri = std.Uri.parse(req.url) catch return error.GraphBadRequest;
+    var http_req = client.inner.request(req.method, uri, .{
+        .headers = std_headers,
+        .extra_headers = extra.items,
+        .keep_alive = false,
+    }) catch |err| return mapFetchError(err);
+    defer http_req.deinit();
+
+    if (req.body) |body_bytes| {
+        http_req.transfer_encoding = .{ .content_length = body_bytes.len };
+        var body_writer = http_req.sendBodyUnflushed(&.{}) catch |err| return mapFetchError(err);
+        body_writer.writer.writeAll(body_bytes) catch |err| return mapFetchError(err);
+        body_writer.end() catch |err| return mapFetchError(err);
+        if (http_req.connection) |conn| conn.flush() catch |err| return mapFetchError(err);
+    } else {
+        http_req.sendBodiless() catch |err| return mapFetchError(err);
+    }
+
+    var redirect_buf: [1024]u8 = undefined;
+    const response = http_req.receiveHead(&redirect_buf) catch |err| return mapFetchError(err);
+    const status: u16 = @intFromEnum(response.head.status);
+
+    return .{
+        .gpa = gpa,
+        .status = status,
+        .body = gpa.dupe(u8, "") catch return error.OutOfMemory,
+        .request_id = null,
         .retry_after_seconds = null,
     };
 }

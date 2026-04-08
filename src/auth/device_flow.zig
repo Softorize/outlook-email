@@ -98,7 +98,13 @@ pub fn pollFromJson(
             gpa,
             body,
             .{ .ignore_unknown_fields = true },
-        ) catch return error.GraphMalformedJson;
+        ) catch {
+            @import("../util/io.zig").errPrint(
+                "ocli: could not parse token response: {s}\n",
+                .{body},
+            );
+            return error.GraphMalformedJson;
+        };
         defer parsed.deinit();
 
         var arena = std.heap.ArenaAllocator.init(gpa);
