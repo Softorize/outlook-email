@@ -79,7 +79,7 @@ pub const Session = struct {
     /// POSTs the refresh_token grant and persists the new access/refresh
     /// pair. Returns an owned copy of the fresh access token; caller frees.
     fn refreshWith(self: *Session, refresh_token: []const u8, account: []const u8) Error![]u8 {
-        log.debug("outlook: refreshing access token for {s}", .{account});
+        log.debug("ocli: refreshing access token for {s}", .{account});
         const url = endpoints.tokenUrl(self.gpa, self.cfg.tenant) catch return error.OutOfMemory;
         defer self.gpa.free(url);
 

@@ -112,7 +112,7 @@ pub fn writeAccounts(list: []const []const u8, current: ?[]const u8) !void {
         const marker: []const u8 = if (is_current) "*" else " ";
         stdoutPrint("{s} {s}\n", .{ marker, acct });
     }
-    if (list.len == 0) stdoutPrint("(no accounts; run 'outlook login')\n", .{});
+    if (list.len == 0) stdoutPrint("(no accounts; run 'ocli login')\n", .{});
 }
 
 pub fn writeError(diag: errors.Diagnostic, profile: color.Profile) !void {

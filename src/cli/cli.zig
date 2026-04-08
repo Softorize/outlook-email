@@ -63,14 +63,14 @@ pub fn dispatch(
 ) !u8 {
     var parsed = args_mod.parseGlobals(argv) catch |err| {
         switch (err) {
-            error.UnknownGlobalFlag => io.err("outlook: unknown global flag\n"),
-            error.MissingGlobalValue => io.err("outlook: global flag missing value\n"),
+            error.UnknownGlobalFlag => io.err("ocli: unknown global flag\n"),
+            error.MissingGlobalValue => io.err("ocli: global flag missing value\n"),
         }
         return 2;
     };
 
     // Allow the global boolean flags (--json, --no-color, --verbose) after
-    // the command name too, e.g. `outlook accounts --json`. Anything else in
+    // the command name too, e.g. `ocli accounts --json`. Anything else in
     // the post-command tail belongs to the command's own parser.
     const cleaned_rest = try args_mod.stripPostCommandGlobals(gpa, parsed.rest, &parsed.globals);
     defer gpa.free(cleaned_rest);
@@ -95,7 +95,7 @@ pub fn dispatch(
 
     var cfg = config.load(gpa) catch |err| switch (err) {
         error.BadConfigFile => {
-            io.err("outlook: invalid config file\n");
+            io.err("ocli: invalid config file\n");
             return 3;
         },
         else => return err,
@@ -213,7 +213,7 @@ fn runCommand(ctx: *Context, cmd_name: []const u8, rest: []const []const u8) !vo
     if (std.mem.eql(u8, cmd_name, "archive")) return cmd_archive.run(ctx, rest);
     if (std.mem.eql(u8, cmd_name, "search")) return cmd_search.run(ctx, rest);
     if (std.mem.eql(u8, cmd_name, "folders")) return cmd_folders.run(ctx, rest);
-    io.err("outlook: unknown command\n");
+    io.err("ocli: unknown command\n");
     return error.InvalidArgument;
 }
 
@@ -230,14 +230,14 @@ fn exitCodeFor(err: anyerror) u8 {
 }
 
 fn printVersion() !void {
-    io.outPrint("outlook {s}\n", .{build_options.app_version});
+    io.outPrint("ocli {s}\n", .{build_options.app_version});
 }
 
 fn printUsage() !void {
     const usage =
-        \\outlook -- Microsoft 365 email from the terminal
+        \\ocli -- Microsoft 365 email from the terminal
         \\
-        \\Usage: outlook <command> [options]
+        \\Usage: ocli <command> [options]
         \\
         \\Commands:
         \\  login              Sign in with a Microsoft work or personal account

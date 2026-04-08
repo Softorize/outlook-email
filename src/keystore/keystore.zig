@@ -90,7 +90,7 @@ pub fn open(gpa: std.mem.Allocator, service_name: []const u8) !Backend {
 
 fn warnFallback() void {
     @import("../util/io.zig").err(
-        "outlook: native credential store unavailable, using encrypted file fallback.\n" ++
+        "ocli: native credential store unavailable, using encrypted file fallback.\n" ++
             "         See README.md for the security trade-offs.\n",
     );
 }

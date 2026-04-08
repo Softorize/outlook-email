@@ -5,10 +5,11 @@
 [![Platforms](https://img.shields.io/badge/Platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue.svg)](#2-building-for-distribution)
 
 A command-line client for Microsoft 365 mail, written in Zig 0.15.2.
+The project is `outlook-email`; the binary it produces is `ocli`.
 
 Designed for enterprise distribution: the IT team builds the binary once with
 the company's Azure client ID baked in, signs it, and ships it to end users.
-End users download the binary, run `outlook login`, authenticate by typing a
+End users download the binary, run `ocli login`, authenticate by typing a
 short code into a browser, and start reading, searching, and sending mail from
 the terminal.
 
@@ -16,7 +17,7 @@ the terminal.
 - OAuth 2.0 device code flow -- no browser redirect, no local HTTP server
 - Refresh tokens stored in the OS credential store (macOS Keychain, Windows
   Credential Manager, Linux libsecret with an encrypted-file fallback)
-- Silent token refresh, multiple saved accounts, `outlook use` to switch
+- Silent token refresh, multiple saved accounts, `ocli use` to switch
 - Subcommand-style CLI (`list`, `read`, `send`, `reply`, `forward`, `delete`,
   `archive`, `search`, `folders`) with both coloured human output and `--json`
 - Honours `HTTPS_PROXY` / `HTTP_PROXY` for corporate networks, plus
@@ -111,7 +112,7 @@ zig build -Dclient-id=<GUID> -Doptimize=ReleaseSafe -Dtarget=aarch64-macos
 zig build -Dclient-id=<GUID> -Doptimize=ReleaseSafe -Dtarget=x86_64-macos
 ```
 
-Each invocation produces `zig-out/bin/outlook` (or `outlook.exe` on Windows).
+Each invocation produces `zig-out/bin/ocli` (or `ocli.exe` on Windows).
 
 ### Build options
 
@@ -119,7 +120,7 @@ Each invocation produces `zig-out/bin/outlook` (or `outlook.exe` on Windows).
 |---|---|---|
 | `-Dclient-id=<GUID>` | empty | Azure client ID baked into the binary. Required for anything except `--help` / `--version`. |
 | `-Dtenant=<ID or "common">` | `common` | Default tenant. Leave as `common` for multi-tenant + MSA. |
-| `-Dapp-version=<str>` | `0.1.0` | What `outlook --version` prints. |
+| `-Dapp-version=<str>` | `0.1.0` | What `ocli --version` prints. |
 | `-Dtarget=...` | native | Cross-compilation target triple. |
 | `-Doptimize=ReleaseSafe` | `Debug` | Use `ReleaseSafe` for production. |
 | `-Dstrip=true` | false | Strip debug info for smaller binaries. |
@@ -145,26 +146,26 @@ Most deployments should ship the **musl** builds only.
   `notarytool`. Without notarisation macOS Gatekeeper blocks first run with
   a cryptic "can't be opened" dialog.
   ```
-  codesign --timestamp --options runtime -s "Developer ID Application: Acme Inc." outlook
-  zip -r outlook.zip outlook
-  xcrun notarytool submit outlook.zip --apple-id ... --team-id ... --wait
-  xcrun stapler staple outlook
+  codesign --timestamp --options runtime -s "Developer ID Application: Acme Inc." ocli
+  zip -r ocli.zip ocli
+  xcrun notarytool submit ocli.zip --apple-id ... --team-id ... --wait
+  xcrun stapler staple ocli
   ```
 - **Windows**: sign with an EV code-signing certificate to avoid SmartScreen
   warnings.
   ```
-  signtool sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /a outlook.exe
+  signtool sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /a ocli.exe
   ```
 - **Linux**: no signing required; ship the musl binary as-is. If you publish
   via an internal apt/rpm repo, wrap it in a tiny package with a symlink
-  from `/usr/local/bin/outlook` to the binary.
+  from `/usr/local/bin/ocli` to the binary.
 
 ---
 
 ## 4. End-user first run
 
 ```
-$ outlook login
+$ ocli login
 To sign in, open https://microsoft.com/devicelogin in a browser and
 enter the code:
 
@@ -173,7 +174,7 @@ enter the code:
 Waiting for you to finish signing in...
 Signed in as alice@contoso.com
 
-$ outlook list
+$ ocli list
 * @ 09:12 Bob Jones                    Weekly status
            Quick update on the migration and the staging deploys.
            id: AAMkAD0a...
@@ -182,7 +183,7 @@ $ outlook list
            id: AAMkAD0b...
 ```
 
-`outlook accounts` shows every account saved on this machine; `outlook use
+`ocli accounts` shows every account saved on this machine; `ocli use
 bob@other.com` switches the active account. A single end user can legitimately
 have their work Microsoft 365 account and a personal account signed in at
 the same time and switch between them without logging out.
@@ -195,8 +196,8 @@ The CLI reads settings from these sources in order of precedence (highest
 first):
 
 1. Command-line flags (`--json`, `--proxy`, `--client-id`, ...)
-2. Environment variables (`HTTPS_PROXY`, `NO_COLOR`, `OUTLOOK_CA_BUNDLE`,
-   `OUTLOOK_CLIENT_ID`, `OUTLOOK_TENANT`)
+2. Environment variables (`HTTPS_PROXY`, `NO_COLOR`, `OCLI_CA_BUNDLE`,
+   `OCLI_CLIENT_ID`, `OCLI_TENANT`)
 3. User config file: `config.ini` under the OS config dir
 4. Build-time constants baked in by IT (`-Dclient-id=...`)
 5. Hardcoded defaults
@@ -228,23 +229,23 @@ ca_bundle = /etc/pki/ca-trust/source/anchors/corp-root.pem
 ## 6. Commands
 
 ```
-outlook login                      Sign in via device code flow
-outlook logout [account]           Remove a saved session
-outlook accounts                   List saved accounts
-outlook use <account>              Switch the active account
+ocli login                      Sign in via device code flow
+ocli logout [account]           Remove a saved session
+ocli accounts                   List saved accounts
+ocli use <account>              Switch the active account
 
-outlook list [--folder X] [--top N] [--unread]
+ocli list [--folder X] [--top N] [--unread]
                                    List messages in a folder (default: inbox)
-outlook read <id> [--save-attachments DIR]
+ocli read <id> [--save-attachments DIR]
                                    Show a full message (+ download attachments)
-outlook search <query> [--top N]   Search messages by keyword
-outlook folders                    List mail folders
+ocli search <query> [--top N]   Search messages by keyword
+ocli folders                    List mail folders
 
-outlook send --to "a,b" [--cc ...] [--bcc ...] --subject S [--attach file]...
-outlook reply <id> [--all]         Reply (body from stdin)
-outlook forward <id> --to "a,b"    Forward (body from stdin)
-outlook delete <id>                Delete a message
-outlook archive <id>               Move a message to the Archive folder
+ocli send --to "a,b" [--cc ...] [--bcc ...] --subject S [--attach file]...
+ocli reply <id> [--all]         Reply (body from stdin)
+ocli forward <id> --to "a,b"    Forward (body from stdin)
+ocli delete <id>                Delete a message
+ocli archive <id>               Move a message to the Archive folder
 
 Global flags:
   --json             Machine-readable output (also suppresses colour)
@@ -271,7 +272,7 @@ the command line is prompted for interactively.
 ### Attachments
 
 ```bash
-outlook send --to boss@contoso.com --subject "Monthly report" \
+ocli send --to boss@contoso.com --subject "Monthly report" \
   --attach ~/reports/april.pdf --attach ~/data/raw.csv
 ```
 
@@ -282,7 +283,7 @@ beyond what Microsoft Graph enforces (about 150 MB per attachment).
 To download attachments while reading a message:
 
 ```bash
-outlook read AAMkAD0a --save-attachments ~/Downloads/report
+ocli read AAMkAD0a --save-attachments ~/Downloads/report
 ```
 
 ### Scripting
@@ -292,10 +293,10 @@ keeping prompts and status on stderr:
 
 ```bash
 # Get the unread count.
-outlook list --unread --json | jq 'length'
+ocli list --unread --json | jq 'length'
 
 # Subject line of the most recent message.
-outlook list --json --top 1 | jq -r '.[0].subject'
+ocli list --json --top 1 | jq -r '.[0].subject'
 ```
 
 ---
@@ -309,9 +310,9 @@ that root is installed in the OS trust store (where Zig's TLS will pick it
 up), or point to a PEM bundle explicitly:
 
 ```bash
-outlook --ca-bundle /etc/pki/ca-trust/source/anchors/corp-root.pem list
+ocli --ca-bundle /etc/pki/ca-trust/source/anchors/corp-root.pem list
 # or, persistently:
-export OUTLOOK_CA_BUNDLE=/etc/pki/ca-trust/source/anchors/corp-root.pem
+export OCLI_CA_BUNDLE=/etc/pki/ca-trust/source/anchors/corp-root.pem
 ```
 
 ### "The HTTPS proxy requires authentication"
@@ -333,15 +334,15 @@ switched to the encrypted-file keystore at
 encrypted with a key derived from `/etc/machine-id`. It's less secure than
 a real keystore but usable on headless boxes. See [Security notes](#8-security-notes).
 
-### "Sign-in expired. Run 'outlook login' again."
+### "Sign-in expired. Run 'ocli login' again."
 
-The refresh token was revoked or aged out. Run `outlook login` to get a
+The refresh token was revoked or aged out. Run `ocli login` to get a
 fresh one. If this happens repeatedly, ensure your tenant's conditional
 access policies allow the device code flow for your user.
 
-### `outlook login` loops forever
+### `ocli login` loops forever
 
-The device code expired before you entered it. Re-run `outlook login` and
+The device code expired before you entered it. Re-run `ocli login` and
 enter the code faster. Default expiry is 15 minutes.
 
 ### All commands fail with "This build has no Azure client ID"

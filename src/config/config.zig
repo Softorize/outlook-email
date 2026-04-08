@@ -85,10 +85,10 @@ pub fn load(gpa: std.mem.Allocator) !Config {
         }
     } else |_| {}
 
-    try overrideFromEnv(a, &cfg, "OUTLOOK_CLIENT_ID", &cfg.client_id);
-    try overrideFromEnv(a, &cfg, "OUTLOOK_TENANT", &cfg.tenant);
+    try overrideFromEnv(a, &cfg, "OCLI_CLIENT_ID", &cfg.client_id);
+    try overrideFromEnv(a, &cfg, "OCLI_TENANT", &cfg.tenant);
     try overrideFromEnvOpt(a, &cfg, "HTTPS_PROXY", &cfg.proxy);
-    try overrideFromEnvOpt(a, &cfg, "OUTLOOK_CA_BUNDLE", &cfg.ca_bundle);
+    try overrideFromEnvOpt(a, &cfg, "OCLI_CA_BUNDLE", &cfg.ca_bundle);
     if (std.process.getEnvVarOwned(a, "NO_COLOR")) |v| {
         _ = v; // presence alone disables colour per https://no-color.org/
         cfg.color = .never;

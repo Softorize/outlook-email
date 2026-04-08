@@ -23,7 +23,7 @@ pub fn main() !u8 {
         // Last-resort handler: cli.dispatch is supposed to catch all
         // recoverable errors itself and return an exit code. If one escapes
         // it's a bug; print what we can and exit non-zero.
-        std.debug.print("outlook: unexpected error: {s}\n", .{@errorName(err)});
+        std.debug.print("ocli: unexpected error: {s}\n", .{@errorName(err)});
         return 1;
     };
 }

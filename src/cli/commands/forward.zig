@@ -42,8 +42,8 @@ pub fn run(ctx: *cli.Context, args: []const []const u8) !void {
     // endpoint either. If the user passed --attach, tell them up front.
     if (attach_list.items.len > 0) {
         @import("../../util/io.zig").err(
-            "outlook: --attach on forward is not supported in v1.\n" ++
-                "         Use 'outlook send' with --attach instead.\n",
+            "ocli: --attach on forward is not supported in v1.\n" ++
+                "         Use 'ocli send' with --attach instead.\n",
         );
         return error.InvalidArgument;
     }

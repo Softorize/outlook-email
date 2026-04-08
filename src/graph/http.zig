@@ -110,7 +110,7 @@ pub fn do(client: *Client, gpa: std.mem.Allocator, req: Request) !Response {
             const wait = result.retry_after_seconds orelse 0;
             var resp = result;
             resp.deinit();
-            log.debug("outlook: status={d}, retry in {d}s (attempt {d}/{d})", .{
+            log.debug("ocli: status={d}, retry in {d}s (attempt {d}/{d})", .{
                 result.status, wait, attempt + 1, client.max_retries,
             });
             if (wait > 0) std.Thread.sleep(@as(u64, wait) * std.time.ns_per_s) else backoff(attempt);
@@ -142,7 +142,7 @@ fn doOnce(client: *Client, gpa: std.mem.Allocator, req: Request) !Response {
     var alloc_writer: std.Io.Writer.Allocating = .init(gpa);
     defer alloc_writer.deinit();
 
-    log.debug("outlook: HTTP {s} {s}", .{ @tagName(req.method), req.url });
+    log.debug("ocli: HTTP {s} {s}", .{ @tagName(req.method), req.url });
 
     const fetch_result = client.inner.fetch(.{
         .location = .{ .url = req.url },
