@@ -13,6 +13,12 @@ const io = @import("../util/io.zig");
 
 const promptWrite = io.err;
 
+/// Upper bound on a single interactive input line. 16 KiB comfortably fits
+/// pasted OAuth redirect URLs (the longest realistic input this helper
+/// reads) while preventing an accidental binary pipe from ballooning
+/// memory.
+pub const max_line_bytes: usize = 16 * 1024;
+
 pub fn promptLine(gpa: std.mem.Allocator, prompt: []const u8) ![]u8 {
     promptWrite(prompt);
 
@@ -25,6 +31,7 @@ pub fn promptLine(gpa: std.mem.Allocator, prompt: []const u8) ![]u8 {
         if (n == 0) break;
         if (byte[0] == '\n') break;
         if (byte[0] == '\r') continue;
+        if (buf.items.len >= max_line_bytes) return error.InputTooLong;
         try buf.append(gpa, byte[0]);
     }
     return buf.toOwnedSlice(gpa);

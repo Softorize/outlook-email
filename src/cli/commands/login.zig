@@ -13,6 +13,7 @@ const cli = @import("../cli.zig");
 const args_mod = @import("../args.zig");
 const config = @import("../../config/config.zig");
 const io = @import("../../util/io.zig");
+const compose_input = @import("../compose_input.zig");
 
 pub fn run(ctx: *cli.Context, args: []const []const u8) !void {
     try config.ensureClientId(ctx.cfg);
@@ -52,8 +53,6 @@ fn deviceDisplayPrompt(verification_uri: []const u8, user_code: []const u8, mess
     io.err("Waiting for you to finish signing in...\n");
 }
 
-/// Paste-URL prompt: print the authorize URL, then block on stdin until the
-/// user pastes either the full redirect URL or the bare authorization code.
 fn browserPrompt(gpa: std.mem.Allocator, authorize_url: []const u8) anyerror![]u8 {
     io.errPrint(
         \\Open this URL in your browser and sign in:
@@ -65,20 +64,8 @@ fn browserPrompt(gpa: std.mem.Allocator, authorize_url: []const u8) anyerror![]u
         \\paste it here (or paste just the code), then press Enter.
         \\
         \\
-    ++ "> ", .{authorize_url});
-
-    var buf: std.ArrayList(u8) = .empty;
-    errdefer buf.deinit(gpa);
-    var byte: [1]u8 = undefined;
-    const stdin = std.fs.File.stdin();
-    while (true) {
-        const n = try stdin.read(&byte);
-        if (n == 0) break;
-        if (byte[0] == '\n') break;
-        if (byte[0] == '\r') continue;
-        try buf.append(gpa, byte[0]);
-    }
-    return buf.toOwnedSlice(gpa);
+    , .{authorize_url});
+    return compose_input.promptLine(gpa, "> ");
 }
 
 fn freeAccount(gpa: std.mem.Allocator, a: @import("../../auth/token.zig").Account) void {
