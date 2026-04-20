@@ -9,12 +9,17 @@ The project is `outlook-email`; the binary it produces is `ocli`.
 
 Designed for enterprise distribution: the IT team builds the binary once with
 the company's Azure client ID baked in, signs it, and ships it to end users.
-End users download the binary, run `ocli login`, authenticate by typing a
-short code into a browser, and start reading, searching, and sending mail from
-the terminal.
+End users download the binary, run `ocli login` (or `ocli login --browser`),
+authenticate in the browser, and start reading, searching, and sending mail
+from the terminal.
 
 - Multi-tenant Azure AD + personal Microsoft accounts
-- OAuth 2.0 device code flow -- no browser redirect, no local HTTP server
+- Two browser sign-in flows, no local HTTP server:
+    - OAuth 2.0 **device code** flow (default) -- short code typed into
+      `microsoft.com/devicelogin`
+    - OAuth 2.0 **authorization code + PKCE** flow (`--browser`) --
+      dbxcli-style: paste an auth URL into any browser you already have
+      open, sign in, paste the resulting URL back into the terminal
 - Refresh tokens stored in the OS credential store (macOS Keychain, Windows
   Credential Manager, Linux libsecret with an encrypted-file fallback)
 - Silent token refresh, multiple saved accounts, `ocli use` to switch
@@ -168,6 +173,14 @@ Most deployments should ship the **musl** builds only.
 
 ## 4. End-user first run
 
+Pick whichever sign-in flow you prefer; both land you in the same place.
+
+### 4a. Device code flow (default, `ocli login`)
+
+The CLI shows you a short code. You open `microsoft.com/devicelogin` in any
+browser -- including one on a different device than the one running the CLI
+-- and type the code in.
+
 ```
 $ ocli login
 To sign in, open https://microsoft.com/devicelogin in a browser and
@@ -177,26 +190,23 @@ enter the code:
 
 Waiting for you to finish signing in...
 Signed in as alice@contoso.com
-
-$ ocli list
-* @ 09:12 Bob Jones                    Weekly status
-           Quick update on the migration and the staging deploys.
-           id: AAMkAD0a...
-
-    15:00 Newsletters                  (no subject)
-           id: AAMkAD0b...
 ```
 
-### Alternative: paste-URL sign-in (`--browser`)
+No browser redirect, no local HTTP listener, no code to copy back. Handy on
+headless boxes or when the terminal is inside SSH.
 
-If you prefer to sign in by pasting a URL into the browser you already have
-open (this mirrors the flow popularised by Dropbox's `dbxcli`), run:
+### 4b. Paste-URL flow (`ocli login --browser`)
+
+This mirrors the flow popularised by Dropbox's `dbxcli`: the CLI prints an
+authorize URL, you open it in any browser you already have running, sign in,
+and paste the URL of the page the browser lands on (a blank Microsoft page)
+back into the terminal.
 
 ```
 $ ocli login --browser
 Open this URL in your browser and sign in:
 
-    https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=...
+    https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=...&response_type=code&redirect_uri=...&code_challenge=...&state=...
 
 After sign-in, the browser will land on a blank Microsoft page whose
 URL ends with '?code=...'. Copy that URL from the address bar and
@@ -206,11 +216,28 @@ paste it here (or paste just the code), then press Enter.
 Signed in as alice@contoso.com
 ```
 
-This uses OAuth 2.0 authorization code flow with PKCE and the native-client
-redirect URI. For it to work your Azure app registration must list
+Under the hood this is OAuth 2.0 authorization code flow with PKCE against
+the native-client redirect URI -- no client secret, no local HTTP server.
+The CLI cross-checks the `state` value returned in the pasted URL against
+the one it put in the authorize URL, so a stale or cross-session paste is
+rejected.
+
+For this flow to work the Azure app registration must list
 `https://login.microsoftonline.com/common/oauth2/nativeclient` under
-**Authentication -> Mobile and desktop applications**. (Ticking the built-in
-"nativeclient" checkbox is enough.) No client secret is required.
+**Authentication -> Mobile and desktop applications**. Ticking the
+built-in "nativeclient" checkbox is enough.
+
+### After signing in
+
+```
+$ ocli list
+* @ 09:12 Bob Jones                    Weekly status
+           Quick update on the migration and the staging deploys.
+           id: AAMkAD0a...
+
+    15:00 Newsletters                  (no subject)
+           id: AAMkAD0b...
+```
 
 `ocli accounts` shows every account saved on this machine; `ocli use
 bob@other.com` switches the active account. A single end user can legitimately
@@ -259,6 +286,7 @@ ca_bundle = /etc/pki/ca-trust/source/anchors/corp-root.pem
 
 ```
 ocli login                      Sign in via device code flow
+ocli login --browser            Sign in via paste-URL (auth code + PKCE)
 ocli logout [account]           Remove a saved session
 ocli accounts                   List saved accounts
 ocli use <account>              Switch the active account
