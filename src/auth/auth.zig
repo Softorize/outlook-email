@@ -230,26 +230,7 @@ pub const Session = struct {
                     // tenants.
                     const acct = try fetchMeAccount(self, s.access_token);
                     errdefer freeAccount(self.gpa, acct);
-
-                    const expires_at = std.time.timestamp() + @as(i64, s.expires_in);
-
-                    try self.ks.set(.{
-                        .account = acct.upn,
-                        .label = "refresh_token",
-                        .secret = s.refresh_token,
-                    });
-                    const meta_json = try token_mod.serialiseMetaAlloc(self.gpa, .{
-                        .access_token = s.access_token,
-                        .expires_at_unix = expires_at,
-                    });
-                    defer self.gpa.free(meta_json);
-                    try self.ks.set(.{
-                        .account = acct.upn,
-                        .label = "token_meta",
-                        .secret = meta_json,
-                    });
-
-                    try self.setAccount(acct.upn);
+                    try self.persistTokens(acct.upn, s.access_token, s.refresh_token, s.expires_in);
                     return acct;
                 },
             }
@@ -344,27 +325,28 @@ pub const Session = struct {
 
         const acct = try fetchMeAccount(self, p.value.access_token);
         errdefer freeAccount(self.gpa, acct);
+        try self.persistTokens(acct.upn, p.value.access_token, p.value.refresh_token, p.value.expires_in);
+        return acct;
+    }
 
-        const expires_at = std.time.timestamp() + @as(i64, p.value.expires_in);
-
-        try self.ks.set(.{
-            .account = acct.upn,
-            .label = "refresh_token",
-            .secret = p.value.refresh_token,
-        });
+    /// Write refresh + access tokens to the keystore and switch the session's
+    /// current account. Shared by `loginDeviceFlow` and `loginAuthCode`.
+    fn persistTokens(
+        self: *Session,
+        upn: []const u8,
+        access_token: []const u8,
+        refresh_token: []const u8,
+        expires_in: u32,
+    ) !void {
+        try self.ks.set(.{ .account = upn, .label = "refresh_token", .secret = refresh_token });
+        const expires_at = std.time.timestamp() + @as(i64, expires_in);
         const meta_json = try token_mod.serialiseMetaAlloc(self.gpa, .{
-            .access_token = p.value.access_token,
+            .access_token = access_token,
             .expires_at_unix = expires_at,
         });
         defer self.gpa.free(meta_json);
-        try self.ks.set(.{
-            .account = acct.upn,
-            .label = "token_meta",
-            .secret = meta_json,
-        });
-
-        try self.setAccount(acct.upn);
-        return acct;
+        try self.ks.set(.{ .account = upn, .label = "token_meta", .secret = meta_json });
+        try self.setAccount(upn);
     }
 
     pub fn logout(self: *Session, account: []const u8) !void {
