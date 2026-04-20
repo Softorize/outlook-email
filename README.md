@@ -61,7 +61,11 @@ never have to touch Azure.
      **Accounts in any organizational directory (Any Microsoft Entra ID
      tenant - Multitenant) and personal Microsoft accounts (e.g. Skype, Xbox)**.
      This is required for the `common` tenant + personal accounts to work.
-   - **Redirect URI**: leave blank. The device code flow does not use one.
+   - **Redirect URI**: leave blank for the device code flow. If you want to
+     enable `ocli login --browser` (paste-URL sign-in), go to **Authentication**
+     after registration, click **Add a platform** -> **Mobile and desktop
+     applications**, and tick the built-in
+     `https://login.microsoftonline.com/common/oauth2/nativeclient` entry.
 4. Click **Register**. Copy the **Application (client) ID** from the overview
    page. This GUID is what you bake into the binary in step 2.
 5. Go to **Authentication**:
@@ -182,6 +186,31 @@ $ ocli list
     15:00 Newsletters                  (no subject)
            id: AAMkAD0b...
 ```
+
+### Alternative: paste-URL sign-in (`--browser`)
+
+If you prefer to sign in by pasting a URL into the browser you already have
+open (this mirrors the flow popularised by Dropbox's `dbxcli`), run:
+
+```
+$ ocli login --browser
+Open this URL in your browser and sign in:
+
+    https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=...
+
+After sign-in, the browser will land on a blank Microsoft page whose
+URL ends with '?code=...'. Copy that URL from the address bar and
+paste it here (or paste just the code), then press Enter.
+
+> https://login.microsoftonline.com/common/oauth2/nativeclient?code=0.AXoA...&state=...
+Signed in as alice@contoso.com
+```
+
+This uses OAuth 2.0 authorization code flow with PKCE and the native-client
+redirect URI. For it to work your Azure app registration must list
+`https://login.microsoftonline.com/common/oauth2/nativeclient` under
+**Authentication -> Mobile and desktop applications**. (Ticking the built-in
+"nativeclient" checkbox is enough.) No client secret is required.
 
 `ocli accounts` shows every account saved on this machine; `ocli use
 bob@other.com` switches the active account. A single end user can legitimately

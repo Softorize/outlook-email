@@ -19,3 +19,11 @@ pub fn tokenUrl(gpa: std.mem.Allocator, tenant: []const u8) ![]u8 {
         .{tenant},
     );
 }
+
+pub fn authorizeUrl(gpa: std.mem.Allocator, tenant: []const u8) ![]u8 {
+    return std.fmt.allocPrint(
+        gpa,
+        "https://login.microsoftonline.com/{s}/oauth2/v2.0/authorize",
+        .{tenant},
+    );
+}
