@@ -10,6 +10,7 @@ const http_util = @import("../util/http_util.zig");
 const config = @import("../config/config.zig");
 const keystore = @import("../keystore/keystore.zig");
 const device_flow = @import("device_flow.zig");
+const auth_code = @import("auth_code.zig");
 const endpoints = @import("endpoints.zig");
 const token_mod = @import("token.zig");
 const log = @import("../util/log.zig");
@@ -253,6 +254,117 @@ pub const Session = struct {
                 },
             }
         }
+    }
+
+    /// Callback that the caller (usually the `login` subcommand) supplies to
+    /// drive the paste-URL flow. It is handed the authorize URL and must:
+    ///   1. Print / display the URL so the user can open it in a browser.
+    ///   2. Read the pasted redirect URL or code back from the user.
+    ///   3. Return an owned slice (allocated from `gpa`) containing whatever
+    ///      the user typed; the session frees it.
+    pub const BrowserPrompt = *const fn (
+        gpa: std.mem.Allocator,
+        authorize_url: []const u8,
+    ) anyerror![]u8;
+
+    /// dbxcli-style "paste URL" sign-in. Builds a PKCE-protected authorize
+    /// URL, hands it to `prompt` which is responsible for showing it and
+    /// collecting the pasted redirect URL / code, then exchanges the code
+    /// for tokens via the standard token endpoint.
+    pub fn loginAuthCode(
+        self: *Session,
+        prompt: BrowserPrompt,
+    ) !token_mod.Account {
+        try config.ensureClientId(self.cfg);
+
+        var pkce = try auth_code.generatePkce(self.gpa);
+        defer pkce.deinit(self.gpa);
+        const state = try auth_code.generateState(self.gpa);
+        defer self.gpa.free(state);
+
+        const authorize_endpoint = try endpoints.authorizeUrl(self.gpa, self.cfg.tenant);
+        defer self.gpa.free(authorize_endpoint);
+
+        const scopes_joined = try joinScopes(self.gpa, self.cfg.scopes);
+        defer self.gpa.free(scopes_joined);
+
+        const url = try auth_code.buildAuthorizeUrl(self.gpa, .{
+            .authorize_endpoint = authorize_endpoint,
+            .client_id = self.cfg.client_id,
+            .redirect_uri = self.cfg.redirect_uri,
+            .scopes_joined = scopes_joined,
+            .code_challenge = pkce.challenge,
+            .state = state,
+        });
+        defer self.gpa.free(url);
+
+        const pasted = try prompt(self.gpa, url);
+        defer self.gpa.free(pasted);
+
+        var extracted = try auth_code.extractCode(self.gpa, pasted);
+        defer extracted.deinit(self.gpa);
+
+        if (extracted.state) |got_state| {
+            if (!std.mem.eql(u8, got_state, state)) return error.AuthCodeStateMismatch;
+        }
+
+        const token_url_s = try endpoints.tokenUrl(self.gpa, self.cfg.tenant);
+        defer self.gpa.free(token_url_s);
+
+        const body = try http_util.formEncodeAlloc(self.gpa, &.{
+            .{ "client_id", self.cfg.client_id },
+            .{ "grant_type", "authorization_code" },
+            .{ "code", extracted.code },
+            .{ "redirect_uri", self.cfg.redirect_uri },
+            .{ "code_verifier", pkce.verifier },
+            .{ "scope", scopes_joined },
+        });
+        defer self.gpa.free(body);
+
+        var resp = try http.do(self.http_client, self.gpa, .{
+            .method = .POST,
+            .url = token_url_s,
+            .body = body,
+            .content_type = "application/x-www-form-urlencoded",
+        });
+        defer resp.deinit();
+        if (resp.status != 200) {
+            reportAadError(self.gpa, resp.status, resp.body);
+            return error.AuthCodeServerError;
+        }
+
+        const Parsed = struct {
+            access_token: []const u8,
+            refresh_token: []const u8 = "",
+            expires_in: u32,
+            scope: ?[]const u8 = null,
+        };
+        var p = std.json.parseFromSlice(Parsed, self.gpa, resp.body, .{ .ignore_unknown_fields = true }) catch return error.GraphMalformedJson;
+        defer p.deinit();
+
+        const acct = try fetchMeAccount(self, p.value.access_token);
+        errdefer freeAccount(self.gpa, acct);
+
+        const expires_at = std.time.timestamp() + @as(i64, p.value.expires_in);
+
+        try self.ks.set(.{
+            .account = acct.upn,
+            .label = "refresh_token",
+            .secret = p.value.refresh_token,
+        });
+        const meta_json = try token_mod.serialiseMetaAlloc(self.gpa, .{
+            .access_token = p.value.access_token,
+            .expires_at_unix = expires_at,
+        });
+        defer self.gpa.free(meta_json);
+        try self.ks.set(.{
+            .account = acct.upn,
+            .label = "token_meta",
+            .secret = meta_json,
+        });
+
+        try self.setAccount(acct.upn);
+        return acct;
     }
 
     pub fn logout(self: *Session, account: []const u8) !void {

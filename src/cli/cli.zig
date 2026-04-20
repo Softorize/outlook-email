@@ -181,6 +181,11 @@ fn classifyAnyError(err: anyerror) errors.Error {
         error.DeviceFlowDenied => error.DeviceFlowDenied,
         error.DeviceFlowExpired => error.DeviceFlowExpired,
         error.DeviceFlowPollFailed => error.DeviceFlowPollFailed,
+        error.AuthCodeEmpty => error.AuthCodeEmpty,
+        error.AuthCodeMissing => error.AuthCodeMissing,
+        error.AuthCodeBadEncoding => error.AuthCodeBadEncoding,
+        error.AuthCodeServerError => error.AuthCodeServerError,
+        error.AuthCodeStateMismatch => error.AuthCodeStateMismatch,
         error.NetworkUnreachable => error.NetworkUnreachable,
         error.TlsHandshakeFailed => error.TlsHandshakeFailed,
         error.ProxyAuthRequired => error.ProxyAuthRequired,
@@ -240,7 +245,9 @@ fn printUsage() !void {
         \\Usage: ocli <command> [options]
         \\
         \\Commands:
-        \\  login              Sign in with a Microsoft work or personal account
+        \\  login [--browser]  Sign in with a Microsoft work or personal account
+        \\                     (--browser: paste an auth URL into your own browser
+        \\                      instead of using the device-code flow)
         \\  logout [account]   Remove a saved session
         \\  accounts           List saved accounts
         \\  use <account>      Switch the active account

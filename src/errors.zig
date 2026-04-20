@@ -26,6 +26,11 @@ pub const Error = error{
     DeviceFlowDenied,
     DeviceFlowExpired,
     DeviceFlowPollFailed,
+    AuthCodeEmpty,
+    AuthCodeMissing,
+    AuthCodeBadEncoding,
+    AuthCodeServerError,
+    AuthCodeStateMismatch,
     NotSignedIn,
 
     // --- keystore -----------------------------------------------------------
@@ -90,6 +95,11 @@ pub fn defaultMessage(err: Error) []const u8 {
         error.DeviceFlowDenied => "You denied the sign-in request.",
         error.DeviceFlowExpired => "The device code expired before sign-in completed. Run 'ocli login' again.",
         error.DeviceFlowPollFailed => "Sign-in failed. See the message above for the cause, then retry 'ocli login'.",
+        error.AuthCodeEmpty => "No authorization code was entered. Run 'ocli login --browser' again.",
+        error.AuthCodeMissing => "The pasted URL did not contain a 'code=' parameter. Paste the full URL from the browser address bar (the one that ends with '?code=...').",
+        error.AuthCodeBadEncoding => "The pasted URL contains malformed percent-encoding.",
+        error.AuthCodeServerError => "Microsoft rejected the sign-in (see the error message above).",
+        error.AuthCodeStateMismatch => "The 'state' value in the pasted URL does not match. This can indicate CSRF or a stale paste. Try 'ocli login --browser' again.",
         error.NotSignedIn => "Not signed in. Run 'ocli login' first.",
         error.KeystoreUnavailable => "No credential store is available on this machine. The encrypted file fallback is in use; see README.",
         error.KeystoreItemMissing => "The requested credential was not found in the keystore.",
